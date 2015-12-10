@@ -1,0 +1,6 @@
+[package]
+name = "inheritance"
+version = "0.1.0"
+authors = ["friendlydave <afriendlydave@gmail.com>"]
+
+[dependencies]
