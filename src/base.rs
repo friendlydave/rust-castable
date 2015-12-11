@@ -1,67 +1,114 @@
 use std::any::TypeId;
 use std::mem;
+use std::fmt;
 
-//type TypeIdent = u32;
+// used for checking casts
 pub type TypeIdent = TypeId;
 
-pub trait Castable {
+// low-level inspecting and casting methods used by Castable
+pub trait Inheritable {
+    // trait method to get identity of type
     fn ident() -> TypeIdent where Self: Sized;
+    // method to get identity of type (uses Inheritable::ident())
     fn get_ident(&self) -> TypeIdent;
-    fn get_super(&self) -> &Castable;
-
+    // gets the super-struct as a castable trait object
+    fn get_super(&self) -> &Inheritable;
+    // gets the base struct recursively
     fn get_base(&self) -> &Base {
         self.get_super().get_base()
     }
-
-    fn cmp_ident(&self, t: TypeIdent) -> bool {
-        self.get_ident() == t
-    }
-
-    fn inherits_from(&self, t: TypeIdent) -> bool {
-        if self.cmp_ident(t) {
-            true
-        } else {
-            self.get_super().inherits_from(t)
-        }
-    }
-
-    fn u_downcast(&self, t: TypeIdent) -> Option<&&()> {
-        if self.cmp_ident(t) {
-            Some(unsafe { mem::transmute::<&&Self, &&()>(&self) })
+    // searches for the super-struct of matching type identity
+    fn u_downcast(&self, t: TypeIdent) -> Option<&&Base> {
+        if self.get_ident() == t {
+            Some(unsafe { mem::transmute::<&&Self, &&Base>(&self) })
         } else {
             self.get_super().u_downcast(t)
         }
     }
-
-    fn u_upcast(&self, t: TypeIdent) -> Option<&&()> {
-        if self.cmp_ident(t) {
-            Some(unsafe { mem::transmute::<&&Self, &&()>(&self) })
+    // searches for the super-struct from the top
+    fn u_cast(&self, t: TypeIdent) -> Option<&&Base> {
+        if self.get_ident() == t {
+            Some(unsafe { mem::transmute::<&&Self, &&Base>(&self) })
         } else {
-            unsafe { &*(self.get_base().true_inst) }.u_downcast(t)
+            unsafe { &*self.get_base().true_inst.expect(
+                "unable to cast non Box<_> type") }.u_downcast(t)
         }
     }
 }
 
-pub trait Constructor: Castable {
-    type Super: Castable;
+// correct construction of inherited structs
+pub trait Constructable: Inheritable {
+    // the super-struct that Self inherits from
+    type Super: Constructable;
     fn null() -> Self where Self: Sized {
-        unsafe { mem::zeroed() }
-    }
-    fn init_base(&mut self, s: *const Castable);
-    fn init() -> Self where Self: Sized + 'static {
         let mut s:Self = unsafe { mem::zeroed() };
-        let p = unsafe { mem::transmute::<&Self, *const Self>(&s) };
-        s.init_base(p);
+        s.init_base(None);
         s
     }
+    fn init_base(&mut self, s: Option<*mut Inheritable>);
+    fn init(s: Self) -> Box<Self> where Self: Sized + 'static {
+        let b = Box::new(s);
+        let bp = Box::into_raw(b);
+        unsafe { &mut *bp }.init_base(Some(bp));
+        unsafe { Box::from_raw(bp) }
+    }
     fn inherit(sup: Self::Super) -> Self;
+
+    fn boxed_clone(&self) -> Box<Self> where Self: Clone + 'static {
+        Self::init(Clone::clone(self))
+    }
+}
+
+
+// high-level inspecting and casting methods powered by Inheritable
+pub trait Castable: Constructable {
+    // returns true if Self can Castable::cast to T
+    fn is<T: Constructable>(&self) -> bool {
+        self.u_cast(T::ident()).is_some()
+    }
+    // attempts to down-cast Self to T, cheaper than Castable::cast
+    fn downcast<T: Constructable>(&self) -> Option<&T> {
+        if let Some(v) = self.u_downcast(T::ident()) {
+            Some(*unsafe { mem::transmute::<&&Base, &&T>(v) })
+        } else {
+            None
+        }
+    }
+    // attempts to down-cast Self to T, cheaper than Castable::cast
+    fn downcast_mut<T: Constructable>(&mut self) -> Option<&mut T> {
+        unsafe { mem::transmute::<Option<&T>, Option<&mut T>>(self.downcast()) }
+    }
+    // attempts to cast Self to T, either up or down
+    fn cast<T: Constructable>(&self) -> Option<&T> {
+        if let Some(v) = self.u_cast(T::ident()) {
+            Some(*unsafe { mem::transmute::<&&Base, &&T>(v) })
+        } else {
+            None
+        }
+    }
+    // attempts to cast Self to T, either up or down
+    fn cast_mut<T: Constructable>(&mut self) -> Option<&mut T> {
+        unsafe { mem::transmute::<Option<&T>, Option<&mut T>>(self.cast()) }
+    }
 }
 
 pub struct Base {
-    pub true_inst: *const Castable
+    pub true_inst: Option<*mut Inheritable>
 }
 
-impl Castable for Base {
+impl Clone for Base {
+    fn clone(&self) -> Self {
+        Base { true_inst: None }
+    }
+}
+
+impl fmt::Debug for Base {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "...")
+    }
+}
+
+impl Inheritable for Base {
     fn ident() -> TypeIdent {
         TypeId::of::<Base>()
     }
@@ -70,16 +117,15 @@ impl Castable for Base {
         Self::ident()
     }
 
-    fn get_super(&self) -> &Castable { self }
+    fn get_super(&self) -> &Inheritable { self }
     fn get_base(&self) -> &Base { self }
-    fn inherits_from(&self, _: TypeIdent) -> bool { false }
-    fn u_downcast(&self, _: TypeIdent) -> Option<&&()> { None }
-    fn u_upcast(&self, _: TypeIdent) -> Option<&&()> { None }
+    fn u_downcast(&self, _: TypeIdent) -> Option<&&Base> { None }
+    fn u_cast(&self, _: TypeIdent) -> Option<&&Base> { None }
 }
 
-impl Constructor for Base {
+impl Constructable for Base {
     type Super = Base;
-    fn init_base(&mut self, b: *const Castable) {
+    fn init_base(&mut self, b: Option<*mut Inheritable>) {
         self.true_inst = b;
     }
     fn inherit(_: Self::Super) -> Self {
@@ -87,21 +133,4 @@ impl Constructor for Base {
     }
 }
 
-pub trait CastableHelper: Castable {
-    fn is<T: Castable>(&self) -> bool {
-        self.cmp_ident(T::ident())
-    }
-
-    fn downcast<T: Castable>(&self) -> &T {
-        let v = self.u_downcast(T::ident()).unwrap();
-        *unsafe { mem::transmute::<&&(), &&T>(v) }
-    }
-
-    fn upcast<T: Castable>(&self) -> &T {
-        let v = self.u_upcast(T::ident()).unwrap();
-        *unsafe { mem::transmute::<&&(), &&T>(v) }
-    }
-}
-
-impl CastableHelper for Base {}
-//impl<T> CastableHelper for T where T: Castable {}
+impl Castable for Base {}

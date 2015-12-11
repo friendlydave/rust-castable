@@ -4,106 +4,135 @@
 macro_rules! inherit {
     // phase 1: public struct parse
     (pub struct $($tail:tt)*) => {
-        inherit!{ @pub struct $($tail)* }
+        inherit!{ meta [] @pub struct $($tail)* }
     };
     // phase 1: private struct parse
     (struct $($tail:tt)*) => {
-        inherit!{ @priv struct $($tail)* }
+        inherit!{ meta [] @priv struct $($tail)* }
+    };
+    (#[$nm:meta] $($tail:tt)*) => {
+        inherit!{ meta [$nm,] $($tail)* }
+    };
+    // phase 0: handle attributes
+    (meta [ $($meta:tt)* ] #[$nm:meta] $($tail:tt)*) => {
+        inherit!{ meta [$($meta)* $nm,] $($tail)* }
+    };
+    // phase 1: public struct parse
+    (meta $meta:tt pub struct $($tail:tt)*) => {
+        inherit!{ meta $meta @pub struct $($tail)* }
+    };
+    // phase 1: private struct parse
+    (meta $meta:tt struct $($tail:tt)*) => {
+        inherit!{ meta $meta @priv struct $($tail)* }
     };
     // phase 2: non-empty struct parse
-    (@$v:ident struct $name:ident: $sup:ty { $($queue:tt)* } $($tail:tt)*) => {
-        inherit!{@impl @struct [@$v, $name, $sup]
+    (meta $meta:tt @$v:ident struct $name:ident: $sup:ty { $($queue:tt)* } $($tail:tt)*) => {
+        inherit!{meta $meta @impl @struct [@$v, $name, $sup]
             @queue [ $($queue)* , ]
             $($tail)*
         }
     };
     // phase 2: empty struct parse
-    (@$v:ident struct $name:ident: $sup:ty; $($tail:tt)*) => {
-        inherit!{@impl @struct [@$v, $name, $sup]
+    (meta $meta:tt @$v:ident struct $name:ident: $sup:ty; $($tail:tt)*) => {
+        inherit!{meta $meta @impl @struct [@$v, $name, $sup]
             @queue []
             $($tail)*
         }
     };
     // phase 2: non-empty struct, default $sup
-    (@$v:ident struct $name:ident { $($queue:tt)* } $($tail:tt)*) => {
-        inherit!{@impl @struct [@$v, $name, $crate::base::Base]
+    (meta $meta:tt @$v:ident struct $name:ident { $($queue:tt)* } $($tail:tt)*) => {
+        inherit!{meta $meta @impl @struct [@$v, $name, $crate::base::Base]
             @queue [ $($queue)* , ]
             $($tail)*
         }
     };
     // phase 2: empty struct, default $sup
-    (@$v:ident struct $name:ident; $($tail:tt)*) => {
-        inherit!{@impl @struct [@$v, $name, $crate::base::Base]
+    (meta $meta:tt @$v:ident struct $name:ident; $($tail:tt)*) => {
+        inherit!{meta $meta @impl @struct [@$v, $name, $crate::base::Base]
             @queue []
             $($tail)*
         }
     };
-    // phase 3: impl * for struct, recurse
-    (@impl @struct [@$v:ident, $name:ident, $sup:ty]
+    // phase 3: impl traits for struct
+    (meta $meta:tt @impl @struct [@$v:ident, $name:ident, $sup:ty]
         @queue $queue:tt
         $($tail:tt)*
     ) => {
-        inherit!{@struct [@$v, $name, $sup]
+        inherit!{meta $meta @struct [@$v, $name, $sup]
             @queue $queue
             @pub []
             @priv []
         }
 
-        impl $crate::base::Constructor for $name {
+        impl $crate::base::Inheritable for $name {
+            fn ident() -> $crate::base::TypeIdent { std::any::TypeId::of::<$name>() }
+            fn get_ident(&self) -> $crate::base::TypeIdent { Self::ident() }
+            fn get_super(&self) -> &$crate::base::Inheritable { &self.__super__ }
+        }
+
+        impl $crate::base::Constructable for $name {
             type Super = $sup;
 
-            fn init_base(&mut self, s: *const $crate::base::Castable) {
+            fn init_base(&mut self, s: Option<*mut $crate::base::Inheritable>) {
                 self.__super__.init_base(s);
             }
 
             fn inherit(sup: Self::Super) -> Self {
                 $name {
                     __super__: sup,
-                    .. Self::init()
+                    .. Self::null()
                 }
             }
         }
 
-        impl $crate::base::Castable for $name {
-            fn ident() -> $crate::base::TypeIdent { std::any::TypeId::of::<$name>() }
-            fn get_ident(&self) -> $crate::base::TypeIdent { Self::ident() }
-            fn get_super(&self) -> &$crate::base::Castable { &self.__super__ }
+        impl $crate::base::Castable for $name {}
+
+        impl std::ops::Deref for $name {
+            type Target = $sup;
+            fn deref(&self) -> &$sup {
+                self.downcast::<$sup>().expect("unable to downcast for Deref")
+            }
         }
 
-        impl $crate::base::CastableHelper for $name {}
+        impl std::ops::DerefMut for $name {
+            fn deref_mut(&mut self) -> &mut $sup {
+                self.downcast_mut::<$sup>().expect("unable to downcast for DerefMut")
+            }
+        }
 
         inherit!{ $($tail)* }
     };
     // phase 4: public fields
-    (@struct $m:tt
+    (meta $meta:tt @struct $m:tt
         @queue [ pub  $a:ident : $b:ty, $($tail:tt)* ]
         @pub [ $($public:tt)* ]
         @priv $private:tt
     ) => {
-        inherit!{@struct $m
+        inherit!{meta $meta @struct $m
             @queue [ $($tail)* ]
             @pub [ $($public)* pub $a : $b, ]
             @priv $private
         }
     };
     // phase 4: private fields
-    (@struct $m:tt
+    (meta $meta:tt @struct $m:tt
         @queue [ $a:ident : $b:ty, $($tail:tt)* ]
         @pub $public:tt
         @priv [ $($private:tt)* ]
     ) => {
-        inherit!{@struct $m
+        inherit!{meta $meta @struct $m
             @queue [ $($tail)* ]
             @pub $public
             @priv [ $($private)* $a : $b, ]
         }
     };
     // phase 5: public struct generation
-    (@struct [@pub, $name:ident, $sup:ty]
+    (meta [$($meta:meta),* $(,)*] @struct [@pub, $name:ident, $sup:ty]
         @queue [ $(,)* ]
         @pub  [ $(pub  $a:ident : $b:ty,)* ]
         @priv [ $( $c:ident : $d:ty,)* ]
     ) => {
+        $(#[$meta])*
         pub struct $name {
             __super__: $sup,
             $(pub  $a : $b,)*
@@ -111,11 +140,12 @@ macro_rules! inherit {
         }
     };
     // phase 5: private struct generation
-    (@struct [@priv, $name:ident, $sup:ty]
+    (meta [$($meta:meta),* $(,)*] @struct [@priv, $name:ident, $sup:ty]
         @queue [ $(,)* ]
         @pub  [ $(pub  $a:ident : $b:ty,)* ]
         @priv [ $( $c:ident : $d:ty,)* ]
     ) => {
+        $(#[$meta])*
         struct $name {
             __super__: $sup,
             $(pub  $a : $b,)*
@@ -124,4 +154,39 @@ macro_rules! inherit {
     };
     // base case of recursion
     () => {};
+}
+
+#[macro_export]
+macro_rules! construct {
+    // phase 1: struct expr recognition and without init call
+    (inherit $t:ident { $($tail:tt)* }) => {
+        construct!( parse [] $t { $($tail)* } )
+    };
+    // phase 1: struct expr recognition and init call wrap
+    ($t:ident { $($tail:tt)* }) => {
+        $t::init(construct!( parse [] $t { $($tail)* } ))
+    };
+    // phase 2: parse normal `field: value` part
+    (parse [ $($f:tt)* ] $t:ident { $a:ident: $b:expr, $($tail:tt)* }) => {
+        construct!( parse [ $($f)* $a : $b, ] $t { $($tail)* })
+    };
+    // phase 2: parse final `field: value` part
+    (parse [ $($f:tt)* ] $t:ident { $a:ident: $b:expr }) => {
+        construct!( parse [ $($f)* $a : $b, ] $t {  })
+    };
+    // phase 2: prepare super struct, prepare for expression output
+    (parse $f:tt $t:ident { sup.. $($tail:tt)* }) => {
+        construct!( expr $f [ $t::inherit(construct!( inherit $($tail)* )) ] $t )
+    };
+    // phase 2: handle empty part, prepare for expression output
+    (parse $f:tt $t:ident { $(,)* }) => {
+        construct!( expr $f [ $t::null() ] $t )
+    };
+    // phase 3: output modified strut expression
+    (expr [ $($a:ident : $b:expr,)* ] [$e:expr] $t:ident ) => {
+        $t {
+            $($a : $b,)*
+            .. $e
+        }
+    };
 }
