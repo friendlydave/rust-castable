@@ -3,11 +3,11 @@
 #[macro_use]
 pub mod macros;
 
-pub mod base;
-pub mod cast;
-pub mod castable;
-pub mod constructable;
-pub mod unsafe_castable;
+mod base;
+mod cast;
+mod castable;
+mod constructable;
+mod unsafe_castable;
 
 pub use base::Base;
 pub use cast::Cast;

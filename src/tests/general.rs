@@ -45,7 +45,7 @@ fn mutable_casting() {
     assert_eq!(format!("{} {} {} {}", s.name, s.hours, s.pay, s.sales),
     "John 17 19.5 2");
 
-    let mut s2 = s.clone_cast();
+    let mut s2 = s.clone().init();
     {
         let p2:&mut Person = &mut s2;
         p2.name = "Dave".to_string();

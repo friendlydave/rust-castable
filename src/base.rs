@@ -37,17 +37,11 @@ impl UnsafeCastable for Base {
 
     fn get_super(&self) -> &UnsafeCastable { self }
     fn get_base(&self) -> &Base { self }
-    unsafe fn u_upcast(&self, _: TypeId) -> Option<&&Base> { None }
-    unsafe fn u_downcast(&self, _: TypeId) -> Option<&&Base> { None }
+    unsafe fn u_upcast(&self, _: TypeId) -> Option<&&UnsafeCastable> { None }
+    unsafe fn u_downcast(&self, _: TypeId) -> Option<&&UnsafeCastable> { None }
 }
 
-impl Constructable for Base {
-    type Super = Base;
-
-    unsafe fn inherit(_: Self::Super) -> Self {
-        panic!("base cannot inherit from anything")
-    }
-}
+impl Constructable for Base { type Super = Base; }
 
 impl Castable for Base {}
 

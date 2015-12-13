@@ -1,4 +1,14 @@
 #[macro_export]
+macro_rules! upcast {
+    ($v:ident as $t:ty) => {
+        {
+            let a:&$t = $v;
+            a
+        }
+    }
+}
+
+#[macro_export]
 macro_rules! impl_inherit {
     ($name:ident from $supf:ident : $sup:ty;) => {
         impl $crate::UnsafeCastable for $name {
@@ -10,16 +20,7 @@ macro_rules! impl_inherit {
             fn get_super(&self) -> &$crate::UnsafeCastable { &self.$supf }
         }
 
-        impl $crate::Constructable for $name {
-            type Super = $sup;
-
-            unsafe fn inherit(sup: Self::Super) -> Self {
-                $name {
-                    $supf: sup,
-                    .. Self::null()
-                }
-            }
-        }
+        impl $crate::Constructable for $name { type Super = $sup; }
 
         impl $crate::Castable for $name {}
 
@@ -170,11 +171,12 @@ macro_rules! construct {
     };
     // phase 1: struct expr recognition and init call
     ($t:ident { $($tail:tt)* }) => {
-        <$t as $crate::Constructable>::init::<$t>(construct!( parse [] $t { $($tail)* } ))
+        <$t as $crate::Constructable>::init(construct!( parse [] $t { $($tail)* } ))
     };
     // phase 1: struct expr recognition and init call
     ($t:ident as $s:ident { $($tail:tt)* }) => {
-        <$t as $crate::Constructable>::init::<$s>(construct!( parse [] $t { $($tail)* } ))
+        <$t as $crate::Constructable>::init(
+            construct!( parse [] $t { $($tail)* } )).cast_as::<$s>()
     };
     // phase 2: parse normal `field: value` part
     (parse [ $($f:tt)* ] $t:ident { $a:ident: $b:expr, $($tail:tt)* }) => {
@@ -190,7 +192,8 @@ macro_rules! construct {
     };
     // phase 2: prepare super struct, prepare for expression output
     (parse [ $($f:tt)* ] $t:ident { $(,)* }) => {
-        construct!( expr [ $($f)* __super__ : <<$t as $crate::Constructable>::Super as Default>::default(), ] $t )
+        construct!( expr [ $($f)* __super__ :
+            <<$t as $crate::Constructable>::Super as Default>::default(), ] $t )
     };
     // phase 3: output modified strut expression
     (expr [ $($a:ident : $b:expr,)* ] $t:ident ) => {

@@ -3,9 +3,9 @@
 //trace_macros!(true);
 
 #[macro_use]
-extern crate inheritance;
+extern crate castable;
 
-use inheritance::*;
+use castable::*;
 
 inherit!{
     #[derive(Clone, Debug)]
@@ -52,7 +52,7 @@ fn general() {
     let p:&Person = &s;
     assert!(p.get_ident() == Person::ident());
     // explicit (up) cast to Employee
-    let e:&Employee = p.cast().unwrap();
+    let e:&Employee = p.downcast().unwrap();
     assert!(e.get_ident() == Employee::ident());
 }
 
@@ -75,11 +75,11 @@ fn mutability() {
 
     assert_eq!(format!("{} {} {} {}", s.name, s.hours, s.pay, s.sales), "John 17 19.5 2");
 
-    let mut s2 = s.boxed_clone();
+    let mut s2 = s.clone().init();
     {
         let p2:&mut Person = &mut s2;
         p2.name = "Dave".to_string();
-        let e2:&mut Employee = p2.cast_mut().unwrap();
+        let e2:&mut Employee = p2.downcast_mut().unwrap();
         e2.hours += 3.0;
     }
     assert_eq!(format!("{} {}", s2.name, s2.hours), "Dave 20");

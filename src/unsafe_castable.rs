@@ -2,69 +2,106 @@ use std::any::TypeId;
 use std::mem;
 use base::Base;
 
-/// Low-level inspection and casting methods used by `Castable`.
+/// A trait-object safe implementation of downcasting using recursion.
 ///
-/// The purpose of this trait is to expose important methods like u_downcast and u_cast
-/// but without type parameters, which enables UnsafeCastable items to be accessed behind
-/// a trait object. In general, you shouldn't need to call any of these methods yourself.
+/// Utilizes `std::any::TypeId` and unsafe `mem::transmute`s of borrows to avoid using type
+/// parameters, enabling this trait to be coerced into a boxed trait-object. Without this
+/// trait-object, dynamic downcasting would be impossible.
+///
+/// You should never have to implement or interact with this trait yourself. The `Castable`
+/// trait provides a nice generic `downcast<T>() -> Option<&T>` method, and the `inherit!` and
+/// `impl_inherit!` macros handle the implementing this trait on your types for you.
+///
+/// ```
+/// # #![allow(dead_code)]
+/// # #[macro_use]
+/// # extern crate castable;
+/// # use castable::UnsafeCastable;
+/// # use castable::Constructable;
+/// # inherit! {
+/// #     #[derive(Default)] struct SuperType;
+/// #     #[derive(Default)] struct SubType: SuperType;
+/// # }
+/// # fn main() {
+/// let sub_type = &SubType::default().init();
+/// let super_type = unsafe { sub_type.u_upcast(SuperType::ident()) };
+/// assert!(super_type.is_some());
+///
+/// let super_type:&SuperType = sub_type;
+/// let sub_type = unsafe { super_type.u_downcast(SubType::ident()) };
+/// assert!(sub_type.is_some());
+///
+/// let super_type = &SuperType::default().init();
+/// let sub_type = unsafe { super_type.u_downcast(SubType::ident()) };
+/// assert!(sub_type.is_none());
+/// # }
+/// ```
 pub trait UnsafeCastable {
-    /// Use a pointer from a `Box` to initialize `Base`.
+    /// Use a pointer from a `Box` to initialize the `Base` super type.
     ///
-    /// Without initializing `Base`, calls to `u_cast` will always fail with None.
+    /// `*mut UnsafeCastable` points to the bottom most sub-type. It is implemented by
+    /// accessing the super-type field and calling init_base recursively, until the super
+    /// field is `Base`. `Base` then assigns this pointer to its `instance` field.
     fn init_base(&mut self, s: Option<*mut UnsafeCastable>);
 
     /// Returns the `TypeId` of `Self`.
     ///
-    /// It specifies `Self: Sized` so that `UnsafeCastable` can be converted to a trait object.
+    /// This is a type method, not an instance method. The `Sized` type constraint prevents
+    /// this method from being implemented on the `UnsafeCastable` trait-object.
     fn ident() -> TypeId where Self: Sized;
 
     /// Returns the `TypeId` of `Self`
     ///
-    /// This is an instance method so that the `TypeId` of trait objects can be accessed.
-    /// Uses `ident` internally.
+    /// During casting, this value is used to find the correct super-type.
     fn get_ident(&self) -> TypeId;
 
-    /// Returns the super struct as a trait object.
+    /// Returns the super-type as a trait object.
+    ///
+    /// This is used to implment recursion during dynamic casting. Since the super-type is
+    /// returned as a trait-object, `UnsafeCastable` remains type parameter free, and can
+    /// itself be coerced into a trait-object.
     fn get_super(&self) -> &UnsafeCastable;
 
-    /// Returns the `Base` struct.
+    /// Returns the `Base` type.
     ///
-    /// Calls `get_base` on its super struct recursively until `Base` is reached, which
+    /// Calls `get_base` on its super-type recursively until `Base` is reached, which
     /// ends the recursion by returning itself.
     fn get_base(&self) -> &Base {
         self.get_super().get_base()
     }
 
-    /// Upcasts the type with a matching `TypeId`.
+    /// Dynamically upcasts the type with a matching `TypeId`.
     ///
-    /// Calls `u_upcast` on its super struct recursively. The recursion ends when either a
-    /// super struct's `get_ident` matches `TypeId`, or when `Base` returns `None`. As the name
-    /// implies, it only searches down from `self`.
+    /// Compares `get_ident()` with `TypeId`, return itself if it matches, otherwise
+    /// calling `u_upcase` on its super-type. `Base` ends the recursion by returning `None`,
+    /// meaning there is no type matching the `TypeId` within this instance's super-type
+    /// hierarchy.
     ///
-    /// The type returned is a double reference to the actual type corresponding to the `TypeId`
-    /// unsafely transmuted as `&&Base`, which gets around using a type parameter, but requires
-    /// an unsafe transmute and careful planning.
-    unsafe fn u_upcast(&self, t: TypeId) -> Option<&&Base> {
+    /// The type returned is an unsafely transmuted double reference to the actual type
+    /// corresponding to the `TypeId`, which gets around using a type parameter, but requires
+    /// special handling by the caller.
+    unsafe fn u_upcast(&self, t: TypeId) -> Option<&&UnsafeCastable> {
         if self.get_ident() == t {
-            Some( mem::transmute::<&&Self, &&Base>(&self) )
+            Some( mem::transmute::<&&Self, &&UnsafeCastable>(&self) )
         } else {
             self.get_super().u_upcast(t)
         }
     }
 
-    /// Down/upcasts the type with a matching `TypeId`.
+    /// Dynamically downcasts the type with a matching `TypeId`.
     ///
-    /// Similar to `u_upcast`, but the search begins from the top of the type hierarchy regardless
-    /// of what `self` is. This method uses `Base.instance`, and will fail with None if the
-    /// `Base` was never initialized with `init_base`. This may be misleading, since type might
-    /// have been found if `Base` were initialized.
+    /// Uses `get_base()` to access `Base.instance`, which is a pointer to the bottom most
+    /// sub-type. Then, it calls `u_upcast()` and returns either the sub-type matching the
+    /// `TypeId`, or `None` if not found. The type hierarchy acts as a single ended linked
+    /// list, with `Base` holding a special reference back to the beginning. Downcasting
+    /// is equivalent to upcasting starting from the bottom most sub-type.
     ///
-    /// The type returned is a double reference to the actual type corresponding to the `TypeId`
-    /// unsafely transmuted as `&&Base`, which gets around using a type parameter, but requires
-    /// an unsafe transmute and careful planning.
-    unsafe fn u_downcast(&self, t: TypeId) -> Option<&&Base> {
+    /// The type returned is an unsafely transmuted double reference to the actual type
+    /// corresponding to the `TypeId`, which gets around using a type parameter, but requires
+    /// special handling by the caller.
+    unsafe fn u_downcast(&self, t: TypeId) -> Option<&&UnsafeCastable> {
         if self.get_ident() == t {
-            Some( mem::transmute::<&&Self, &&Base>(&self) )
+            Some( mem::transmute::<&&Self, &&UnsafeCastable>(&self) )
         } else {
             self.get_base().instance.and_then(|inst| (&*inst).u_upcast(t) )
         }
