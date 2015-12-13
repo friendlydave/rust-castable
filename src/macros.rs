@@ -1,3 +1,43 @@
+#[macro_export]
+macro_rules! impl_inherit {
+    ($name:ident from $supf:ident : $sup:ty;) => {
+        impl $crate::UnsafeCastable for $name {
+            fn init_base(&mut self, s: Option<*mut $crate::UnsafeCastable>) {
+                self.$supf.init_base(s);
+            }
+            fn ident() -> ::std::any::TypeId { ::std::any::TypeId::of::<$name>() }
+            fn get_ident(&self) -> ::std::any::TypeId { Self::ident() }
+            fn get_super(&self) -> &$crate::UnsafeCastable { &self.$supf }
+        }
+
+        impl $crate::Constructable for $name {
+            type Super = $sup;
+
+            unsafe fn inherit(sup: Self::Super) -> Self {
+                $name {
+                    $supf: sup,
+                    .. Self::null()
+                }
+            }
+        }
+
+        impl $crate::Castable for $name {}
+
+        impl ::std::ops::Deref for $name {
+            type Target = $sup;
+            fn deref(&self) -> &$sup {
+                $crate::Castable::upcast::<$sup>(self).expect("unable to downcast for Deref")
+            }
+        }
+
+        impl ::std::ops::DerefMut for $name {
+            fn deref_mut(&mut self) -> &mut $sup {
+                $crate::Castable::upcast_mut::<$sup>(self).expect("unable to downcast for DerefMut")
+            }
+        }
+    };
+}
+
 // big thanks to https://danielkeep.github.io/tlborm/book/blk-enum-parsing.html
 // and to Quxxy from #rust
 #[macro_export]
@@ -41,14 +81,14 @@ macro_rules! inherit {
     };
     // phase 2: non-empty struct, default $sup
     (meta $meta:tt @$v:ident struct $name:ident { $($queue:tt)* } $($tail:tt)*) => {
-        inherit!{meta $meta @impl @struct [@$v, $name, $crate::base::Base]
+        inherit!{meta $meta @impl @struct [@$v, $name, $crate::Base]
             @queue [ $($queue)* , ]
             $($tail)*
         }
     };
     // phase 2: empty struct, default $sup
     (meta $meta:tt @$v:ident struct $name:ident; $($tail:tt)*) => {
-        inherit!{meta $meta @impl @struct [@$v, $name, $crate::base::Base]
+        inherit!{meta $meta @impl @struct [@$v, $name, $crate::Base]
             @queue []
             $($tail)*
         }
@@ -64,41 +104,7 @@ macro_rules! inherit {
             @priv []
         }
 
-        impl $crate::base::Inheritable for $name {
-            fn ident() -> $crate::base::TypeIdent { std::any::TypeId::of::<$name>() }
-            fn get_ident(&self) -> $crate::base::TypeIdent { Self::ident() }
-            fn get_super(&self) -> &$crate::base::Inheritable { &self.__super__ }
-        }
-
-        impl $crate::base::Constructable for $name {
-            type Super = $sup;
-
-            fn init_base(&mut self, s: Option<*mut $crate::base::Inheritable>) {
-                self.__super__.init_base(s);
-            }
-
-            fn inherit(sup: Self::Super) -> Self {
-                $name {
-                    __super__: sup,
-                    .. Self::null()
-                }
-            }
-        }
-
-        impl $crate::base::Castable for $name {}
-
-        impl std::ops::Deref for $name {
-            type Target = $sup;
-            fn deref(&self) -> &$sup {
-                self.downcast::<$sup>().expect("unable to downcast for Deref")
-            }
-        }
-
-        impl std::ops::DerefMut for $name {
-            fn deref_mut(&mut self) -> &mut $sup {
-                self.downcast_mut::<$sup>().expect("unable to downcast for DerefMut")
-            }
-        }
+        impl_inherit!{$name from __super__: $sup;}
 
         inherit!{ $($tail)* }
     };
@@ -134,7 +140,7 @@ macro_rules! inherit {
     ) => {
         $(#[$meta])*
         pub struct $name {
-            __super__: $sup,
+            pub __super__: $sup,
             $(pub  $a : $b,)*
             $(     $c : $d,)*
         }
@@ -158,13 +164,17 @@ macro_rules! inherit {
 
 #[macro_export]
 macro_rules! construct {
-    // phase 1: struct expr recognition and without init call
-    (inherit $t:ident { $($tail:tt)* }) => {
+    // phase 1: struct expr recognition
+    (raw $t:ident { $($tail:tt)* }) => {
         construct!( parse [] $t { $($tail)* } )
     };
-    // phase 1: struct expr recognition and init call wrap
+    // phase 1: struct expr recognition and init call
     ($t:ident { $($tail:tt)* }) => {
-        $t::init(construct!( parse [] $t { $($tail)* } ))
+        <$t as $crate::Constructable>::init::<$t>(construct!( parse [] $t { $($tail)* } ))
+    };
+    // phase 1: struct expr recognition and init call
+    ($t:ident as $s:ident { $($tail:tt)* }) => {
+        <$t as $crate::Constructable>::init::<$s>(construct!( parse [] $t { $($tail)* } ))
     };
     // phase 2: parse normal `field: value` part
     (parse [ $($f:tt)* ] $t:ident { $a:ident: $b:expr, $($tail:tt)* }) => {
@@ -175,18 +185,17 @@ macro_rules! construct {
         construct!( parse [ $($f)* $a : $b, ] $t {  })
     };
     // phase 2: prepare super struct, prepare for expression output
-    (parse $f:tt $t:ident { sup.. $($tail:tt)* }) => {
-        construct!( expr $f [ $t::inherit(construct!( inherit $($tail)* )) ] $t )
+    (parse [ $($f:tt)* ] $t:ident { sup.. $($tail:tt)* }) => {
+        construct!( expr [ $($f)* __super__ : construct!( raw $($tail)* ), ] $t )
     };
-    // phase 2: handle empty part, prepare for expression output
-    (parse $f:tt $t:ident { $(,)* }) => {
-        construct!( expr $f [ $t::null() ] $t )
+    // phase 2: prepare super struct, prepare for expression output
+    (parse [ $($f:tt)* ] $t:ident { $(,)* }) => {
+        construct!( expr [ $($f)* __super__ : <<$t as $crate::Constructable>::Super as $crate::Constructable>::default(), ] $t )
     };
     // phase 3: output modified strut expression
-    (expr [ $($a:ident : $b:expr,)* ] [$e:expr] $t:ident ) => {
+    (expr [ $($a:ident : $b:expr,)* ] $t:ident ) => {
         $t {
             $($a : $b,)*
-            .. $e
         }
     };
 }
