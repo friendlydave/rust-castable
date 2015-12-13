@@ -1,7 +1,7 @@
-# rust-cast
+# rust-castable
 struct inheritance with automatic upcasting and dynamic downcasting.
 
-I wanted something similar to how [the servo project](https://github.com/servo/servo/blob/master/components/script/dom/bindings/inheritance.rs) implemented inheritance for dom object, but with dynamic downcasting and without compiler plugins.
+I wanted something similar to how [the servo project](https://github.com/servo/servo/blob/master/components/script/dom/bindings/inheritance.rs) implemented inheritance for dom objects, but without compiler plugins and without transmuting raw structs. So I created this crate which enables structs to inherit from one another, and for structs to up-cast and down-cast.
 
 # Features
 
