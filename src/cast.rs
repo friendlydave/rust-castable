@@ -33,8 +33,14 @@ impl<T: Castable> DerefMut for Cast<T> {
     }
 }
 
-impl<T: Clone + Constructable + 'static> Clone for Cast<T> {
+impl<T: Clone + Constructable> Clone for Cast<T> {
     fn clone(&self) -> Self {
         T::clone_cast(self)
+    }
+}
+
+impl<T: Constructable> From<T> for Cast<T> {
+    fn from(t: T) -> Self {
+        t.init()
     }
 }

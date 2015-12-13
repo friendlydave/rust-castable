@@ -26,13 +26,13 @@ macro_rules! impl_inherit {
         impl ::std::ops::Deref for $name {
             type Target = $sup;
             fn deref(&self) -> &$sup {
-                $crate::Castable::upcast::<$sup>(self).expect("unable to downcast for Deref")
+                &self.$supf
             }
         }
 
         impl ::std::ops::DerefMut for $name {
             fn deref_mut(&mut self) -> &mut $sup {
-                $crate::Castable::upcast_mut::<$sup>(self).expect("unable to downcast for DerefMut")
+                &mut self.$supf
             }
         }
     };
@@ -190,7 +190,7 @@ macro_rules! construct {
     };
     // phase 2: prepare super struct, prepare for expression output
     (parse [ $($f:tt)* ] $t:ident { $(,)* }) => {
-        construct!( expr [ $($f)* __super__ : <<$t as $crate::Constructable>::Super as $crate::Constructable>::default(), ] $t )
+        construct!( expr [ $($f)* __super__ : <<$t as $crate::Constructable>::Super as Default>::default(), ] $t )
     };
     // phase 3: output modified strut expression
     (expr [ $($a:ident : $b:expr,)* ] $t:ident ) => {

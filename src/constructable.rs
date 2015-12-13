@@ -8,7 +8,7 @@ use std::mem;
 ///
 /// When constructing `UnsafeCastable` types, consider the `construct!` macro before using these
 /// methods; much like `UnsafeCastable` these methods are lowlevel and TODO
-pub trait Constructable: Castable {
+pub trait Constructable: Castable where Self: 'static {
     // the super-struct that Self inherits from
     type Super: Constructable;
 
@@ -18,12 +18,8 @@ pub trait Constructable: Castable {
         s
     }
 
-    fn default() -> Self where Self: Sized {
-        unimplemented!();
-    }
-
-    fn init<T: Castable>(s: Self) -> Cast<T> where Self: Sized + 'static {
-        let b:Box<UnsafeCastable> = Box::new(s);
+    fn init<T: Castable>(self) -> Cast<T> where Self: Sized {
+        let b:Box<UnsafeCastable> = Box::new(self);
         let bp = Box::into_raw(b);
         unsafe { &mut *bp }.init_base(Some(bp));
         Cast::new(unsafe { Box::from_raw(bp) })
@@ -31,7 +27,7 @@ pub trait Constructable: Castable {
 
     unsafe fn inherit(sup: Self::Super) -> Self;
 
-    fn clone_cast(&self) -> Cast<Self> where Self: Clone + 'static {
-        Self::init(self.clone())
+    fn clone_cast(&self) -> Cast<Self> where Self: Clone {
+        Self::init(<Self as Clone>::clone(self))
     }
 }

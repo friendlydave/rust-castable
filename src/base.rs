@@ -44,13 +44,15 @@ impl UnsafeCastable for Base {
 impl Constructable for Base {
     type Super = Base;
 
-    fn default() -> Self where Self: Sized {
-        Base { instance: None }
-    }
-
     unsafe fn inherit(_: Self::Super) -> Self {
         panic!("base cannot inherit from anything")
     }
 }
 
 impl Castable for Base {}
+
+impl Default for Base {
+    fn default() -> Self {
+        Base { instance: None }
+    }
+}
