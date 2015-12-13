@@ -1,42 +1,68 @@
-# rust-inherit
-basic struct inheritance in rust
+# rust-cast
+struct inheritance with automatic upcasting and dynamic downcasting.
 
-I originally looked at how [the servo project](https://github.com/servo/servo/blob/master/components/script/dom/bindings/inheritance.rs) implemented inheritance for the dom, but this doesn't use complier plugins or unsafe casting (only to get around life-times).
+I wanted something similar to how [the servo project](https://github.com/servo/servo/blob/master/components/script/dom/bindings/inheritance.rs) implemented inheritance for dom object, but with dynamic downcasting and without compiler plugins.
+
+# Features
+
+ - struct and impl inheritance
+ - `inherit!` and `construct!` macros
+ - straight-forward downcast method: `fn downcast<T>() -> Option<&T>`
+ - upcasting uses `Deref` and `DerefMut` and is automatic
+ - `Cast<T>` type enables heterogeneous containers
+
+# Limitations
+
+ - structs must be `Sized`
+ - structs cannot use lifetime parameters (`struct Foo<'a>;`)
+ - no macro support for structs with type parameters (`struct Foo<T>;`)
+ - upcasting from `Cast<T>` uses `downcast()` internally, which means O(n)
 
 # Example
 
-Below is an example demonstrating basic usage of this crate.
+(TODO: come up with a better example)
 
 ```rust
 
 #[macro_use]
 extern crate inheritance;
 
-use inheritance::base::{Constructor, CastableHelper};
+use inheritance::base::{Castable};
 
 inherit!{
     pub struct Person {
-        name: String
+        pub name: String
     }
 
-    pub struct Worker: Person {
-        job: String
+    pub struct Employee: Person {
+        pub hours: f64,
+        pub pay: f64
+    }
+
+    pub struct Salesperson: Employee {
+        pub sales: u32
+    }
+}
+
+impl Employee {
+    pub fn income(&self) -> f64 {
+        self.hours * self.pay
     }
 }
 
 fn main() {
-    // TODO: improve constructors
-    let w = Worker {
-        job: "sales".to_string(),
-        .. Worker::inherit(Person {
-            name: "John".to_string(),
-            .. Person::null()
-        })
-    };
-    let msg = format!("{} works in {}.", w.downcast::<Person>().name, w.job);
-    assert_eq!(msg, "John works in sales.");
+    let s = construct!( Salesperson {
+        sales: 4,
+        sup.. Employee {
+            hours: 21.5,
+            pay: 15.25,
+            sup.. Person {
+                name: "John".to_string()
+            }
+        }
+    });
+    let msg = format!("{} made {} sales.", s.name, s.sales);
+    assert_eq!(msg, "John made 4 sales.");
+    assert_eq!(s.income(), 21.5 * 15.25);
 }
 ```
-
-# Planned Features
-I hope to improve the constructors, to implement down/upcast_mut, and Deref for auto-down/upcasting.
