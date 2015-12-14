@@ -31,8 +31,11 @@ impl Employee {
     }
 }
 
+fn general_gdb_stop_here() {}
+
 #[test]
 fn general() {
+    general_gdb_stop_here();
     // construct macro uses similar struct expression syntax
     let s = construct!( Salesperson {
         sales: 4,
@@ -58,6 +61,7 @@ fn general() {
 
 #[test]
 fn mutability() {
+    general_gdb_stop_here();
     let mut s = construct!( Salesperson {
         sales: 4,
         sup.. Employee {
@@ -74,8 +78,8 @@ fn mutability() {
     s.sales = 2;
 
     assert_eq!(format!("{} {} {} {}", s.name, s.hours, s.pay, s.sales), "John 17 19.5 2");
-
-    let mut s2 = s.clone().init();
+    let oo = s.clone();
+    let mut s2 = oo.init();
     {
         let p2:&mut Person = &mut s2;
         p2.name = "Dave".to_string();

@@ -2,7 +2,7 @@
 macro_rules! upcast {
     ($v:ident as $t:ty) => {
         {
-            let a:&$t = $v;
+            let a:&$t = &$v;
             a
         }
     }
@@ -18,6 +18,9 @@ macro_rules! impl_inherit {
             fn ident() -> ::std::any::TypeId { ::std::any::TypeId::of::<$name>() }
             fn get_ident(&self) -> ::std::any::TypeId { Self::ident() }
             fn get_super(&self) -> &$crate::UnsafeCastable { &self.$supf }
+            fn get_super_mut(&mut self) -> &mut $crate::UnsafeCastable { &mut self.$supf }
+            fn as_any(&self) -> &::std::any::Any { self }
+            fn as_any_mut(&mut self) -> &mut ::std::any::Any { self }
         }
 
         impl $crate::Constructable for $name { type Super = $sup; }
@@ -26,15 +29,11 @@ macro_rules! impl_inherit {
 
         impl ::std::ops::Deref for $name {
             type Target = $sup;
-            fn deref(&self) -> &$sup {
-                &self.$supf
-            }
+            fn deref(&self) -> &$sup { &self.$supf }
         }
 
         impl ::std::ops::DerefMut for $name {
-            fn deref_mut(&mut self) -> &mut $sup {
-                &mut self.$supf
-            }
+            fn deref_mut(&mut self) -> &mut $sup { &mut self.$supf }
         }
     };
 }

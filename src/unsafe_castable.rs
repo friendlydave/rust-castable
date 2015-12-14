@@ -1,5 +1,4 @@
-use std::any::TypeId;
-use std::mem;
+use std::any::{Any, TypeId};
 use base::Base;
 
 /// A trait-object safe implementation of downcasting using recursion.
@@ -36,7 +35,7 @@ use base::Base;
 /// assert!(sub_type.is_none());
 /// # }
 /// ```
-pub trait UnsafeCastable {
+pub trait UnsafeCastable: Any {
     /// Use a pointer from a `Box` to initialize the `Base` super type.
     ///
     /// `*mut UnsafeCastable` points to the bottom most sub-type. It is implemented by
@@ -61,6 +60,7 @@ pub trait UnsafeCastable {
     /// returned as a trait-object, `UnsafeCastable` remains type parameter free, and can
     /// itself be coerced into a trait-object.
     fn get_super(&self) -> &UnsafeCastable;
+    fn get_super_mut(&mut self) -> &mut UnsafeCastable;
 
     /// Returns the `Base` type.
     ///
@@ -69,6 +69,13 @@ pub trait UnsafeCastable {
     fn get_base(&self) -> &Base {
         self.get_super().get_base()
     }
+
+    fn get_base_mut(&mut self) -> &mut Base {
+        self.get_super_mut().get_base_mut()
+    }
+
+    fn as_any(&self) -> &Any;
+    fn as_any_mut(&mut self) -> &mut Any;
 
     /// Dynamically upcasts the type with a matching `TypeId`.
     ///
@@ -80,11 +87,20 @@ pub trait UnsafeCastable {
     /// The type returned is an unsafely transmuted double reference to the actual type
     /// corresponding to the `TypeId`, which gets around using a type parameter, but requires
     /// special handling by the caller.
-    unsafe fn u_upcast(&self, t: TypeId) -> Option<&&UnsafeCastable> {
+    unsafe fn u_upcast(&self, t: TypeId) -> Option<&Any> {
         if self.get_ident() == t {
-            Some( mem::transmute::<&&Self, &&UnsafeCastable>(&self) )
+            Some(self.as_any())
         } else {
             self.get_super().u_upcast(t)
+        }
+    }
+
+    /// Mutable variant of the `u_upcast` method.
+    unsafe fn u_upcast_mut(&mut self, t: TypeId) -> Option<&mut Any> {
+        if self.get_ident() == t {
+            Some(self.as_any_mut())
+        } else {
+            self.get_super_mut().u_upcast_mut(t)
         }
     }
 
@@ -99,11 +115,20 @@ pub trait UnsafeCastable {
     /// The type returned is an unsafely transmuted double reference to the actual type
     /// corresponding to the `TypeId`, which gets around using a type parameter, but requires
     /// special handling by the caller.
-    unsafe fn u_downcast(&self, t: TypeId) -> Option<&&UnsafeCastable> {
+    unsafe fn u_downcast(&self, t: TypeId) -> Option<&Any> {
         if self.get_ident() == t {
-            Some( mem::transmute::<&&Self, &&UnsafeCastable>(&self) )
+            Some(self.as_any())
         } else {
             self.get_base().instance.and_then(|inst| (&*inst).u_upcast(t) )
+        }
+    }
+
+    /// Mutable variant of the `u_downcast` method.
+    unsafe fn u_downcast_mut(&mut self, t: TypeId) -> Option<&mut Any> {
+        if self.get_ident() == t {
+            Some(self.as_any_mut())
+        } else {
+            self.get_base_mut().instance.and_then(|inst| (&mut *inst).u_upcast_mut(t) )
         }
     }
 }

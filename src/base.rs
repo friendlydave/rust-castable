@@ -2,7 +2,7 @@ use UnsafeCastable;
 use Constructable;
 use Castable;
 
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 use std::fmt;
 
 pub struct Base {
@@ -36,9 +36,15 @@ impl UnsafeCastable for Base {
     }
 
     fn get_super(&self) -> &UnsafeCastable { self }
+    fn get_super_mut(&mut self) -> &mut UnsafeCastable { self }
     fn get_base(&self) -> &Base { self }
-    unsafe fn u_upcast(&self, _: TypeId) -> Option<&&UnsafeCastable> { None }
-    unsafe fn u_downcast(&self, _: TypeId) -> Option<&&UnsafeCastable> { None }
+    fn get_base_mut(&mut self) -> &mut Base { self }
+    fn as_any(&self) -> &Any { self }
+    fn as_any_mut(&mut self) -> &mut Any { self }
+    unsafe fn u_upcast(&self, _: TypeId) -> Option<&Any> { None }
+    unsafe fn u_upcast_mut(&mut self, _: TypeId) -> Option<&mut Any> { None }
+    unsafe fn u_downcast(&self, _: TypeId) -> Option<&Any> { None }
+    unsafe fn u_downcast_mut(&mut self, _: TypeId) -> Option<&mut Any> { None }
 }
 
 impl Constructable for Base { type Super = Base; }

@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 pub struct Cast<T: Castable> {
-    pub __box__: Box<UnsafeCastable>,
+    __box__: Box<UnsafeCastable>,
     p: PhantomData<T>
 }
 
